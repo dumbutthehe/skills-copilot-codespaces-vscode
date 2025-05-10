@@ -1,0 +1,331 @@
+{% extends "layout.html" %}
+
+{% block title %}Transactions{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-exchange-alt me-2"></i>Transaction History</h2>
+            <p class="lead">
+                {% if account_id %}
+                Viewing transactions for account: <span class="badge bg-primary">{{ account_id }}</span>
+                {% else %}
+                View all your account transactions
+                {% endif %}
+            </p>
+        </div>
+        <div class="col-md-4 text-md-end">
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newTransactionModal">
+                <i class="fas fa-plus-circle me-1"></i>New Transaction
+            </button>
+        </div>
+    </div>
+
+    <!-- Transaction Filters -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4><i class="fas fa-filter me-2"></i>Filter Transactions</h4>
+                </div>
+                <div class="card-body">
+                    <form method="GET" action="{{ url_for('transactions.get_transactions') }}" id="filter-form">
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label for="account_id" class="form-label">Account</label>
+                                <select class="form-select" id="account_id" name="account_id">
+                                    <option value="">All Accounts</option>
+                                    <!-- This would be populated with actual account data -->
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="limit" class="form-label">Show Records</label>
+                                <select class="form-select" id="limit" name="limit">
+                                    <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
+                                    <option value="25" {% if limit == 25 %}selected{% endif %}>25</option>
+                                    <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+                                    <option value="100" {% if limit == 100 %}selected{% endif %}>100</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="offset" class="form-label">Page</label>
+                                <div class="input-group">
+                                    <button type="button" class="btn btn-outline-secondary" id="prevPage" {% if offset == 0 %}disabled{% endif %}>
+                                        <i class="fas fa-chevron-left"></i>
+                                    </button>
+                                    <input type="number" class="form-control text-center" id="offset" name="offset" value="{{ offset }}" min="0" readonly>
+                                    <button type="button" class="btn btn-outline-secondary" id="nextPage">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-search me-1"></i>Apply Filters
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transactions List -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Transaction List</h4>
+                </div>
+                <div class="card-body">
+                    {% if transactions %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Type</th>
+                                        <th>Description</th>
+                                        <th>Amount</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for transaction in transactions %}
+                                    <tr>
+                                        <td>{{ transaction.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                        <td>{{ transaction.transaction_type | capitalize }}</td>
+                                        <td>
+                                            {% if transaction.transaction_type == 'transfer' %}
+                                                Transfer: {{ transaction.sender_account.account_number if transaction.sender_account else 'N/A' }} → 
+                                                {{ transaction.receiver_account.account_number }}
+                                            {% elif transaction.transaction_type == 'deposit' %}
+                                                Deposit to: {{ transaction.receiver_account.account_number }}
+                                            {% else %}
+                                                {{ transaction.reference or 'No description' }}
+                                            {% endif %}
+                                        </td>
+                                        <td class="{% if transaction.from_account_id and transaction.from_account_id|string == account_id|string %}text-danger{% else %}text-success{% endif %}">
+                                            {% if transaction.from_account_id and transaction.from_account_id|string == account_id|string %}-{% else %}+{% endif %}
+                                            {{ "%.2f"|format(transaction.amount) }}
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-{{ 'success' if transaction.status == 'completed' else 'warning' if transaction.status == 'pending' else 'danger' }}">
+                                                {{ transaction.status }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <a href="{{ url_for('transactions.get_transaction_details', transaction_id=transaction.transaction_id) }}" 
+                                               class="btn btn-sm btn-info">
+                                                <i class="fas fa-info-circle"></i>
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>No transactions found.
+                        </div>
+                    {% endif %}
+                </div>
+                {% if transactions %}
+                <div class="card-footer">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            Showing {{ transactions|length }} of {{ limit }} transactions
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary" id="prevPageBottom" {% if offset == 0 %}disabled{% endif %}>
+                                <i class="fas fa-chevron-left me-1"></i>Previous
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" id="nextPageBottom">
+                                Next<i class="fas fa-chevron-right ms-1"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Transaction Modal -->
+<div class="modal fade" id="newTransactionModal" tabindex="-1" aria-labelledby="newTransactionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="newTransactionModalLabel">Create New Transaction</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('transactions.create_transaction') }}" method="POST">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Transaction Type</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="type" id="typeTransfer" value="transfer" checked>
+                            <label class="form-check-label" for="typeTransfer">
+                                Transfer
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="type" id="typeDeposit" value="deposit">
+                            <label class="form-check-label" for="typeDeposit">
+                                Deposit
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div id="transferFields">
+                        <div class="mb-3">
+                            <label for="from_account" class="form-label">From Account</label>
+                            <select class="form-select" id="from_account" name="from_account" required>
+                                <option value="">Select account</option>
+                                <!-- Will be populated with JavaScript -->
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="to_account" class="form-label">To Account</label>
+                            <input type="text" class="form-control" id="to_account" name="to_account" placeholder="Recipient account ID" required>
+                        </div>
+                    </div>
+                    
+                    <div id="depositFields" style="display: none;">
+                        <div class="mb-3">
+                            <label for="to_account_deposit" class="form-label">To Account</label>
+                            <select class="form-select" id="to_account_deposit" name="to_account" required>
+                                <option value="">Select account</option>
+                                <!-- Will be populated with JavaScript -->
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="amount" class="form-label">Amount</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control" id="amount" name="amount" step="0.01" min="0.01" required>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="reference" class="form-label">Reference (Optional)</label>
+                        <input type="text" class="form-control" id="reference" name="reference" placeholder="e.g., Rent payment">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="submitTransaction">Submit Transaction</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle pagination
+        const offsetInput = document.getElementById('offset');
+        const limitInput = document.getElementById('limit');
+        const prevPageBtn = document.getElementById('prevPage');
+        const nextPageBtn = document.getElementById('nextPage');
+        const prevPageBottomBtn = document.getElementById('prevPageBottom');
+        const nextPageBottomBtn = document.getElementById('nextPageBottom');
+        
+        function updatePagination(change) {
+            let currentOffset = parseInt(offsetInput.value);
+            let limit = parseInt(limitInput.value);
+            let newOffset = currentOffset + (change * limit);
+            if (newOffset < 0) newOffset = 0;
+            offsetInput.value = newOffset;
+            document.getElementById('filter-form').submit();
+        }
+        
+        prevPageBtn.addEventListener('click', function() {
+            updatePagination(-1);
+        });
+        
+        nextPageBtn.addEventListener('click', function() {
+            updatePagination(1);
+        });
+        
+        if (prevPageBottomBtn) {
+            prevPageBottomBtn.addEventListener('click', function() {
+                updatePagination(-1);
+            });
+        }
+        
+        if (nextPageBottomBtn) {
+            nextPageBottomBtn.addEventListener('click', function() {
+                updatePagination(1);
+            });
+        }
+        
+        // Handle transaction type toggle
+        const typeTransfer = document.getElementById('typeTransfer');
+        const typeDeposit = document.getElementById('typeDeposit');
+        const transferFields = document.getElementById('transferFields');
+        const depositFields = document.getElementById('depositFields');
+        
+        typeTransfer.addEventListener('change', function() {
+            transferFields.style.display = 'block';
+            depositFields.style.display = 'none';
+        });
+        
+        typeDeposit.addEventListener('change', function() {
+            transferFields.style.display = 'none';
+            depositFields.style.display = 'block';
+        });
+        
+        // Fetch accounts for dropdowns
+        fetch('{{ url_for("accounts.get_accounts") }}', {
+            headers: {
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            const fromAccountSelect = document.getElementById('from_account');
+            const toAccountDepositSelect = document.getElementById('to_account_deposit');
+            const accountFilterSelect = document.getElementById('account_id');
+            
+            // Populate account filter
+            accountFilterSelect.innerHTML = '<option value="">All Accounts</option>';
+            
+            data.forEach(account => {
+                // From account dropdown (for transfers)
+                const fromOption = document.createElement('option');
+                fromOption.value = account.account_id;
+                fromOption.textContent = `${account.account_number} (Balance: ${account.balance.toFixed(2)})`;
+                fromAccountSelect.appendChild(fromOption);
+                
+                // To account dropdown (for deposits)
+                const toOption = document.createElement('option');
+                toOption.value = account.account_id;
+                toOption.textContent = account.account_number;
+                toAccountDepositSelect.appendChild(toOption);
+                
+                // Account filter dropdown
+                const filterOption = document.createElement('option');
+                filterOption.value = account.account_id;
+                filterOption.textContent = account.account_number;
+                if (account.account_id === '{{ account_id }}') {
+                    filterOption.selected = true;
+                }
+                accountFilterSelect.appendChild(filterOption);
+            });
+        })
+        .catch(error => {
+            console.error('Error fetching accounts:', error);
+        });
+    });
+</script>
+{% endblock %}
